@@ -1,9 +1,26 @@
 import re
 from dataclasses import dataclass
-from datetime import date, datetime
-from typing import List, Optional, Tuple
+from datetime import date
+from typing import Dict, List, Optional, Tuple
 
+from app.core.astrology_rules import house_from_lagna_and_moon
+
+# Vimsottari timeline uses these abbreviations
 PLANETS = {"Sun", "Moon", "Mars", "Merc", "Jup", "Ven", "Sat", "Rah", "Ket"}
+
+# Body table uses full names; map to the abbreviations above
+BODY_NAME_TO_ABBR = {
+    "Sun": "Sun",
+    "Moon": "Moon",
+    "Mars": "Mars",
+    "Mercury": "Merc",
+    "Jupiter": "Jup",
+    "Venus": "Ven",
+    "Saturn": "Sat",
+    "Rahu": "Rah",
+    "Ketu": "Ket",
+}
+
 
 @dataclass
 class ParsedProfile:
@@ -13,13 +30,22 @@ class ParsedProfile:
     dasha_antar: str
     lagna_rasi: Optional[str] = None
 
+    # NEW: raw planet rasi mapping parsed from Body table
+    planet_rasi: Optional[Dict[str, str]] = None
+
+    # NEW: planet houses computed from lagna_rasi + planet_rasi
+    planet_houses: Optional[Dict[str, int]] = None
+
+    # NEW: houses for current MD/AD (if available)
+    dasha_maha_house: Optional[int] = None
+    dasha_antar_house: Optional[int] = None
+
 
 def _parse_birth_utc_offset_minutes(text: str) -> int:
     """
     Parse: Time Zone:  8:00:00 (East of GMT)
     Return: minutes, e.g. +480
     """
-    # allow spaces
     m = re.search(r"Time Zone:\s*([+-]?\d+):(\d+):(\d+)\s*\((East|West) of GMT\)", text)
     if not m:
         raise ValueError("Cannot find 'Time Zone:' line in report")
@@ -30,10 +56,9 @@ def _parse_birth_utc_offset_minutes(text: str) -> int:
     direction = m.group(4)
 
     total = abs(hours) * 60 + minutes + (1 if seconds >= 30 else 0)
-
-    # In JHora text, it often writes "8:00:00 (East of GMT)" without leading +
     sign = +1 if direction == "East" else -1
     return sign * total
+
 
 def _parse_natal_nakshatra_name(text: str) -> str:
     """
@@ -45,26 +70,50 @@ def _parse_natal_nakshatra_name(text: str) -> str:
         raise ValueError("Cannot find 'Nakshatra:' line in report")
     return m.group(1).strip()
 
+
 def _parse_lagna_rasi(text: str) -> Optional[str]:
     """
     Parse Lagna rasi from the Body table line, e.g.
-    Lagna                   23 Aq 22' 03.68" PBha      2    Aq   Ta
-
-    We capture the sign token after degrees: 'Aq'
+      Lagna  20 Sc 20' 42.50" ...
+    Capture: 'Sc'
     """
     m = re.search(r"^Lagna\s+\d+\s+([A-Za-z]{2})\s+\d+'", text, flags=re.MULTILINE)
     if not m:
         return None
-    return m.group(1)
+    return m.group(1).strip()
 
+
+def _parse_planet_rasi_map(text: str) -> Dict[str, str]:
+    """
+    Parse planet rasi from the Body table section, e.g.
+      Sun - AK                24 Ar 13' ...
+      Mercury - PK             9 Ta 38' ...
+      Rahu                    16 Ge 15' ...
+
+    Output keys are abbreviations used by Vimsottari timeline:
+      Sun/Moon/Mars/Merc/Jup/Ven/Sat/Rah/Ket
+    """
+    # Match start of line: planet name, then anything (e.g., "- AK"), then degrees + rasi
+    # Example: "Mercury - PK             9 Ta 38' 48.48" ..."
+    planet_pattern = re.compile(
+        r"^(Sun|Moon|Mars|Mercury|Jupiter|Venus|Saturn|Rahu|Ketu)\b.*?\s(\d+)\s+([A-Za-z]{2})\s+\d+'",
+        flags=re.MULTILINE,
+    )
+
+    out: Dict[str, str] = {}
+    for m in planet_pattern.finditer(text):
+        full_name = m.group(1)
+        rasi = m.group(3).strip()
+        abbr = BODY_NAME_TO_ABBR.get(full_name)
+        if abbr:
+            out[abbr] = rasi
+
+    return out
 
 
 def _extract_vimsottari_block(text: str) -> str:
     """
     Extract everything between 'Vimsottari Dasa' header and next Dasa section header.
-    This matches your real report:
-      line 776: Vimsottari Dasa ():
-      line 806: Moola Dasa ...
     """
     lines = text.splitlines()
 
@@ -83,9 +132,8 @@ def _extract_vimsottari_block(text: str) -> str:
             end_i = j
             break
 
-    block_lines = lines[header_i + 1:end_i]
+    block_lines = lines[header_i + 1 : end_i]
 
-    # trim blank lines
     while block_lines and block_lines[0].strip() == "":
         block_lines.pop(0)
     while block_lines and block_lines[-1].strip() == "":
@@ -95,7 +143,6 @@ def _extract_vimsottari_block(text: str) -> str:
     if not block:
         raise ValueError("Empty Vimsottari block")
     return block
-
 
 
 def parse_vimsottari_timeline(block: str) -> List[Tuple[str, str, date]]:
@@ -109,6 +156,9 @@ def parse_vimsottari_timeline(block: str) -> List[Tuple[str, str, date]]:
     items: List[Tuple[str, str, date]] = []
     current_maha: Optional[str] = None
 
+    def is_date(s: str) -> bool:
+        return bool(re.match(r"^\d{4}-\d{2}-\d{2}$", s))
+
     for raw in block.splitlines():
         line = raw.strip()
         if not line:
@@ -116,28 +166,23 @@ def parse_vimsottari_timeline(block: str) -> List[Tuple[str, str, date]]:
 
         tokens = line.split()
 
-        # detect new maha block start:
-        # first token planet, second token planet, third token date
-        def is_date(s: str) -> bool:
-            return bool(re.match(r"^\d{4}-\d{2}-\d{2}$", s))
-
+        # New maha block start: first token planet, second token planet, third token date
         if len(tokens) >= 3 and tokens[0] in PLANETS and tokens[1] in PLANETS and is_date(tokens[2]):
             current_maha = tokens[0]
-            i = 1  # parse pairs from tokens[1:]
+            i = 1  # parse from tokens[1:]
         else:
             if current_maha is None:
                 raise ValueError("Vimsottari block continuation found before any maha block")
-            i = 0  # continuation line, starts with antar
+            i = 0  # continuation line starts with antar
 
         # parse (antar, date) pairs
         while i + 1 < len(tokens):
             antar = tokens[i]
             dt = tokens[i + 1]
             if antar not in PLANETS or not is_date(dt):
-                # stop if format breaks
                 break
-            y, m, d = map(int, dt.split("-"))
-            items.append((current_maha, antar, date(y, m, d)))
+            y, mo, da = map(int, dt.split("-"))
+            items.append((current_maha, antar, date(y, mo, da)))
             i += 2
 
     # sort & dedup
@@ -152,6 +197,7 @@ def parse_vimsottari_timeline(block: str) -> List[Tuple[str, str, date]]:
 
     return deduped
 
+
 def get_current_dasha(timeline: List[Tuple[str, str, date]], today: date) -> Tuple[str, str]:
     """
     Pick the last record whose start_date <= today.
@@ -164,11 +210,11 @@ def get_current_dasha(timeline: List[Tuple[str, str, date]], today: date) -> Tup
             break
 
     if current is None:
-        # today earlier than first record: return first
         maha, antar, _ = timeline[0]
         return maha, antar
 
     return current[0], current[1]
+
 
 def parse_report_text(text: str, today: date) -> ParsedProfile:
     natal = _parse_natal_nakshatra_name(text)
@@ -179,10 +225,33 @@ def parse_report_text(text: str, today: date) -> ParsedProfile:
     timeline = parse_vimsottari_timeline(vblock)
     maha, antar = get_current_dasha(timeline, today)
 
+    # NEW: parse planet rasi map from Body table
+    planet_rasi = _parse_planet_rasi_map(text)
+
+    # NEW: compute houses if lagna is present
+    planet_houses: Optional[Dict[str, int]] = None
+    maha_house: Optional[int] = None
+    antar_house: Optional[int] = None
+    if lagna is not None and planet_rasi:
+        planet_houses = {}
+        for p, rasi in planet_rasi.items():
+            try:
+                planet_houses[p] = house_from_lagna_and_moon(lagna, rasi)
+            except Exception:
+                # keep robust: skip if any unknown rasi token appears
+                continue
+
+        maha_house = planet_houses.get(maha)
+        antar_house = planet_houses.get(antar)
+
     return ParsedProfile(
         natal_nakshatra_name=natal,
         birth_utc_offset_minutes=birth_offset,
         dasha_maha=maha,
         dasha_antar=antar,
-        lagna_rasi=lagna
+        lagna_rasi=lagna,
+        planet_rasi=planet_rasi or None,
+        planet_houses=planet_houses,
+        dasha_maha_house=maha_house,
+        dasha_antar_house=antar_house,
     )
