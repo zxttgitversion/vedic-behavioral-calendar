@@ -11,6 +11,41 @@ from app.core.astrology_rules import (
 from app.core.rule_loader import load_yaml_rule
 
 
+
+
+def compute_base_score(parsed_profile: Dict[str, Any], feat: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    v1.1 Step 1:
+    Base score driven by Dasha + Tara (主发动机)
+    """
+    raise NotImplementedError
+
+
+def apply_environment_modifiers(base: Dict[str, Any], feat: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    v1.1 Step 2:
+    Tithi / environment layer
+    """
+    raise NotImplementedError
+
+
+def apply_gochara_modifiers(score: Dict[str, Any], parsed_profile: Dict[str, Any], feat: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    v1.1 Step 3:
+    House / transit modifiers (Gochara, later BAV)
+    """
+    raise NotImplementedError
+
+
+def finalize_score(score: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    v1.1 Step 4:
+    Clamp + signal + actions
+    """
+    raise NotImplementedError
+
+
+
 def classify_signal(score: float) -> str:
     if score >= 70:
         return "green"
