@@ -87,26 +87,48 @@ def _load_rules() -> Dict[str, Any]:
 # Step 1: Base Score (MD/AD relationship)
 # -----------------------------
 
+def relationship_from_houses(maha_house: int, antar_house: int) -> str:
+    """
+    Convert MD/AD house positions into the 7 canonical relationship labels:
+    1/1, 2/12, 3/11, 4/10, 5/9, 6/8, 7/7
+    """
+    # Houses are 1..12
+    diff = (antar_house - maha_house) % 12  # 0..11
+
+    # Map symmetric offsets to 7 labels
+    mapping = {
+        0: "1/1",
+        1: "2/12",
+        2: "3/11",
+        3: "4/10",
+        4: "5/9",
+        5: "6/8",
+        6: "7/7",
+        7: "6/8",
+        8: "5/9",
+        9: "4/10",
+        10: "3/11",
+        11: "2/12",
+    }
+    return mapping[diff]
+
+
 def get_dasha_relationship(maha: str, antar: str, parsed_profile: Dict[str, Any]) -> str:
     """
-    TODO (strict version): compute relationship based on MD/AD planets' house positions in natal chart.
-    Current (placeholder): deterministic mapping WITHOUT natal positions.
-
-    Why placeholder:
-    - current parser provides only maha/antar names.
-    - cannot infer 6/8 etc without planet house placements.
-
-    Replace this function once you parse MD/AD planet houses from zz.txt.
+    v1.1: Prefer real MD/AD house positions when available.
+    Fallback only if parsing is incomplete.
     """
-    # Safe fallback:
+    maha_house = parsed_profile.get("dasha_maha_house")
+    antar_house = parsed_profile.get("dasha_antar_house")
+
+    if isinstance(maha_house, int) and isinstance(antar_house, int):
+        return relationship_from_houses(maha_house, antar_house)
+
+    # Fallback (should be rare once parser is stable)
     if maha == antar:
         return "1/1"
-    # Very simple placeholder: treat some known-friction pairs as 6/8 (example)
-    # You should overwrite with real computation later.
-    friction_pairs = {("Sat", "Moon"), ("Moon", "Sat")}
-    if (maha, antar) in friction_pairs:
-        return "6/8"
     return "7/7"
+
 
 
 def compute_base_score(parsed_profile: Dict[str, Any], rules: Dict[str, Any]) -> Dict[str, Any]:
@@ -122,6 +144,8 @@ def compute_base_score(parsed_profile: Dict[str, Any], rules: Dict[str, Any]) ->
         "antar": antar,
         "dasha_relationship": rel,
         "base_score": base,
+        "maha_house": parsed_profile.get("dasha_maha_house"),
+        "antar_house": parsed_profile.get("dasha_antar_house"),
     }
 
 
