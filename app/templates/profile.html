@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Profile</title>
+</head>
+<body>
+  <h2>Profile Parsed</h2>
+
+  <p><b>File ID:</b> {{ file_id }}</p>
+
+  <h3>Calendar Timezone</h3>
+  <p>{{ profile["calendar_tz"] }}</p>
+
+  <h3>Key Fields</h3>
+  <ul>
+    <li><b>Natal Nakshatra:</b> {{ profile["parsed"]["natal_nakshatra_name"] }}</li>
+    <li><b>Birth UTC Offset (minutes):</b> {{ profile["parsed"]["birth_utc_offset_minutes"] }}</li>
+    <li><b>Current Dasha:</b> {{ profile["parsed"]["dasha_maha"] }} / {{ profile["parsed"]["dasha_antar"] }}</li>
+  </ul>
+
+  <hr>
+
+  <p>Next: generate 30-day calendar (we will build this next).</p>
+  <!-- 先占位，下一步我们做真正按钮 -->
+  <p><a href="/calendar/{{ file_id }}">Generate / View 30-day calendar</a></p>
+
+</body>
+</html>

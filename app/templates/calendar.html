@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>30-Day Calendar</title>
+</head>
+<body>
+  <h2>30-Day Calendar</h2>
+  <p><b>File ID:</b> {{ file_id }}</p>
+  <p><b>Timezone:</b> {{ tz }}</p>
+
+  <table border="1" cellpadding="6" cellspacing="0">
+    <tr>
+      <th>Date</th>
+      <th>Signal</th>
+      <th>Score</th>
+      <th>Link</th>
+    </tr>
+    {% for d in days %}
+    <tr>
+      <td>{{ d["date"] }}</td>
+      <td>
+        {% if d["signal"] == "green" %}
+          🟢 green
+        {% elif d["signal"] == "yellow" %}
+          🟡 yellow
+        {% else %}
+          🔴 red
+        {% endif %}
+      </td>
+      <td>{{ d["day_score"] }}</td>
+      <td><a href="/day/{{ file_id }}/{{ d['date'] }}">View</a></td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <br>
+  <a href="/profile/{{ file_id }}">Back to Profile</a>
+</body>
+</html>
