@@ -16,7 +16,10 @@ venv/
 .vscode/
 
 # Runtime data (按你项目实际情况调整)
-storage/uploads/
-storage/profiles/
+storage/
+
+app/storage/uploads/
+app/storage/profiles/
+
 *.sqlite
 *.log
