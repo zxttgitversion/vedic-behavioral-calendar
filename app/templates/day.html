@@ -14,41 +14,41 @@
   <h3>Drivers</h3>
   <h3>为什么是这个结果？ (Why this result?)</h3>
 
-    <p>📅 <b>{{ day["date"] }}</b> ｜ <b>{{ day["signal"]|capitalize }}</b> ({{ day["day_score"] }})</p>
+  <p>📅 <b>{{ day["date"] }}</b> ｜ <b>{{ day["signal"]|capitalize }}</b> ({{ day["day_score"] }})</p>
 
-    {% if day.get("special_flags") and day["special_flags"]|length > 0 %}
-    <p><b>Special Flags:</b> {{ day["special_flags"] }}</p>
-    {% endif %}
+  <hr>
 
-    <hr>
+  <h4>🕰 大运关系（Vimshottari Dasha｜主发动机）</h4>
+  <ul>
+    <li>当前大运 (MD-AD): <b>{{ day["user_profile"]["dasha_period"] }}</b></li>
+    <li>相对关系 (Relationship): <b>{{ day["user_profile"]["dasha_relationship"] }}</b></li>
+  </ul>
 
-    <h4>🌙 星宿匹配（Tara Bala｜宿曜）</h4>
-    <ul>
+  <h4>🌙 星宿匹配（Tara Bala｜宿曜）</h4>
+  <ul>
     <li>出生星宿 (Natal): <b>{{ day["components"]["natal_nakshatra"] }}</b></li>
     <li>今日星宿 (Today): <b>{{ day["components"]["transit_nakshatra"] }}</b></li>
-    <li>匹配类型 (Label): <b>{{ day["components"]["tara_label"] }}</b></li>
-    <li>得分贡献 (Score): <b>{{ day["components"]["base_score"] }}</b></li>
-    </ul>
+    <li>匹配类型 (Label): <b>{{ day["astrological_triggers"]["tara_bala"]["name"] }}</b></li>
+  </ul>
 
-    <h4>🌗 月相（Tithi｜提提）</h4>
-    <ul>
-    <li>今日提提 (Tithi): <b>{{ day["components"]["tithi"] }}</b></li>
-    <li>环境分 (Env score): <b>{{ day["components"]["env_score"] }}</b></li>
-    </ul>
+  <h4>🏠 流年触发（Gochara｜宫位）</h4>
+  <ul>
+    {% for x in day["astrological_triggers"]["key_transits"] %}
+      <li><b>{{ x["planet"] }}</b> in house <b>{{ x["house"] }}</b> — {{ x["note"] }}</li>
+    {% endfor %}
+  </ul>
 
-    <h4>🏠 月亮宫位（House｜宫位）</h4>
-    <ul>
-    <li>Lagna (上升星座): <b>{{ day["components"]["lagna_rasi"] }}</b></li>
-    <li>月亮星座 (Moon Rasi): <b>{{ day["components"]["moon_rasi"] }}</b></li>
-    <li>月亮宫位 (House): <b>{{ day["components"]["moon_house"] }}</b></li>
-    <li>宫位系数 (House factor): <b>{{ day["components"]["house_factor"] }}</b></li>
-    </ul>
+  <hr>
 
-    <h4>🕰 人生阶段（Vimshottari Dasha｜大运）</h4>
-    <ul>
-    <li>当前大运 (Current): <b>{{ day["drivers"]["dasha"] }}</b></li>
-    <li>Dasha factor: <b>{{ day["components"]["dasha_factor"] }}</b></li>
-    </ul>
+  <h4>📊 五维得分（Dimensions）</h4>
+  <ul>
+    {% for k, v in day["scores"]["dimensions"].items() %}
+      <li>{{ k }}: <b>{{ v }}</b></li>
+    {% endfor %}
+  </ul>
+
+  <p><b>Total Index:</b> {{ day["scores"]["total_index"] }}</p>
+
 
     <hr>
 
