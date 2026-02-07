@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Dict, Any, List, Optional, Tuple
 
-from app.core.daily_features import get_daily_features_stub
+from app.core.daily_features import get_daily_features_swe
 from app.core.astrology_rules import (
     clamp,
     house_from_lagna_and_moon,
@@ -270,7 +270,7 @@ def score_day(parsed_profile: Dict[str, Any], d: date) -> Dict[str, Any]:
     rules = _load_rules()
 
     # Dynamic daily features (still stub; Swiss Ephemeris later)
-    feat = get_daily_features_stub(d, parsed_profile["natal_nakshatra_name"])
+    feat = get_daily_features_swe(d, parsed_profile["natal_nakshatra_name"])
 
     # Step 1
     base_pack = compute_base_score(parsed_profile, rules)
@@ -324,7 +324,7 @@ def score_day(parsed_profile: Dict[str, Any], d: date) -> Dict[str, Any]:
                     "planet": "Moon",
                     "house": gochara_pack["moon_house"],
                     "status": "House bonus applied" if gochara_pack["moon_house"] else "Lagna missing",
-                    "note": "Using stub daily features; replace with Swiss Ephemeris",
+                    "note": "Moon transit from Swiss Ephemeris (sidereal)",
                 }
             ],
         },
