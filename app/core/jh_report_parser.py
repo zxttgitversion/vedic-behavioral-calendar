@@ -29,6 +29,7 @@ class ParsedProfile:
     dasha_maha: str
     dasha_antar: str
     lagna_rasi: Optional[str] = None
+    natal_moon_rasi: Optional[str] = None
 
     # NEW: raw planet rasi mapping parsed from Body table
     planet_rasi: Optional[Dict[str, str]] = None
@@ -39,6 +40,9 @@ class ParsedProfile:
     # NEW: houses for current MD/AD (if available)
     dasha_maha_house: Optional[int] = None
     dasha_antar_house: Optional[int] = None
+
+    # NEW: BAV per planet and rasi, e.g. {"Jup": {"Ar": 5, ...}, ...}
+    bav_rasi: Optional[Dict[str, Dict[str, int]]] = None
 
 
 def _parse_birth_utc_offset_minutes(text: str) -> int:
@@ -145,6 +149,59 @@ def _extract_vimsottari_block(text: str) -> str:
     return block
 
 
+def _parse_bav_rasi_table(text: str) -> Dict[str, Dict[str, int]]:
+    """
+    Parse the "Ashtakavarga of Rasi Chart" matrix.
+    Example rows:
+      Su   3*  2   2   4   5   5   5   2   4   6   5   5
+      Ju   5   4*  5   6   5   4   4   5   5   4   5   4
+    Return:
+      {"Sun": {"Ar":3, ...}, "Jup": {"Ar":5, ...}, ...}
+    """
+    row_to_planet = {
+        "Su": "Sun",
+        "Mo": "Moon",
+        "Ma": "Mars",
+        "Me": "Merc",
+        "Ju": "Jup",
+        "Ve": "Ven",
+        "Sa": "Sat",
+    }
+    sign_order = ["Ar", "Ta", "Ge", "Cn", "Le", "Vi", "Li", "Sc", "Sg", "Cp", "Aq", "Pi"]
+
+    lines = text.splitlines()
+    start_i: Optional[int] = None
+    for i, line in enumerate(lines):
+        if "Ashtakavarga of Rasi Chart" in line:
+            start_i = i
+            break
+    if start_i is None:
+        return {}
+
+    out: Dict[str, Dict[str, int]] = {}
+    for line in lines[start_i + 1:]:
+        s = line.strip()
+        if not s:
+            continue
+        if s.startswith("Sodhya Pinda"):
+            break
+
+        m = re.match(r"^(Su|Mo|Ma|Me|Ju|Ve|Sa)\s+(.+)$", s)
+        if not m:
+            continue
+
+        row = m.group(1)
+        tail = m.group(2)
+        nums = re.findall(r"\d+\*?", tail)
+        if len(nums) < 12:
+            continue
+
+        scores = [int(x.replace("*", "")) for x in nums[:12]]
+        out[row_to_planet[row]] = {sign_order[idx]: scores[idx] for idx in range(12)}
+
+    return out
+
+
 def parse_vimsottari_timeline(block: str) -> List[Tuple[str, str, date]]:
     """
     Parse rows like:
@@ -227,6 +284,8 @@ def parse_report_text(text: str, today: date) -> ParsedProfile:
 
     # NEW: parse planet rasi map from Body table
     planet_rasi = _parse_planet_rasi_map(text)
+    bav_rasi = _parse_bav_rasi_table(text)
+    natal_moon_rasi = planet_rasi.get("Moon") if planet_rasi else None
 
     # NEW: compute houses if lagna is present
     planet_houses: Optional[Dict[str, int]] = None
@@ -250,8 +309,10 @@ def parse_report_text(text: str, today: date) -> ParsedProfile:
         dasha_maha=maha,
         dasha_antar=antar,
         lagna_rasi=lagna,
+        natal_moon_rasi=natal_moon_rasi,
         planet_rasi=planet_rasi or None,
         planet_houses=planet_houses,
         dasha_maha_house=maha_house,
         dasha_antar_house=antar_house,
+        bav_rasi=bav_rasi or None,
     )

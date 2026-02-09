@@ -71,6 +71,7 @@ async def upload_file(
                 "dasha_maha": parsed.dasha_maha,
                 "dasha_antar": parsed.dasha_antar,
                 "lagna_rasi": parsed.lagna_rasi,
+                "natal_moon_rasi": parsed.natal_moon_rasi,
 
                 # ✅ NEW: for v1.1 base engine explainability
                 "dasha_maha_house": parsed.dasha_maha_house,
@@ -79,6 +80,7 @@ async def upload_file(
                 # (optional but recommended)
                 "planet_rasi": parsed.planet_rasi,
                 "planet_houses": parsed.planet_houses,
+                "bav_rasi": parsed.bav_rasi,
                 },
 
 

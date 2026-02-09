@@ -3,22 +3,22 @@ from datetime import date
 from typing import Dict, Any
 from app.core.constants import NAK_ORDER, RASI_ORDER
 
-def get_daily_features_stub(d: date, natal_nak: str) -> Dict[str, Any]:
-    """
-    Deterministic stub for v1.1 integration.
-    Replace with Swiss Ephemeris in v1.2.
-    """
-    # nak cycles every day
-    transit_nak = NAK_ORDER[d.toordinal() % 27]
-    # moon rasi cycles every 2 days
-    moon_rasi = RASI_ORDER[(d.toordinal() // 2) % 12]
-    # tithi cycles 1..30
-    tithi = (d.toordinal() % 30) + 1
-    return {
-        "transit_nakshatra": transit_nak,
-        "moon_rasi": moon_rasi,
-        "tithi": tithi,
-    }
+# def get_daily_features_stub(d: date, natal_nak: str) -> Dict[str, Any]:
+#     """
+#     Deterministic stub for v1.1 integration.
+#     Replace with Swiss Ephemeris in v1.2.
+#     """
+#     # nak cycles every day
+#     transit_nak = NAK_ORDER[d.toordinal() % 27]
+#     # moon rasi cycles every 2 days
+#     moon_rasi = RASI_ORDER[(d.toordinal() // 2) % 12]
+#     # tithi cycles 1..30
+#     tithi = (d.toordinal() % 30) + 1
+#     return {
+#         "transit_nakshatra": transit_nak,
+#         "moon_rasi": moon_rasi,
+#         "tithi": tithi,
+#     }
 
 def get_daily_features_swe(d: date, natal_nak: str) -> Dict[str, Any]:
     """
@@ -54,8 +54,29 @@ def get_daily_features_swe(d: date, natal_nak: str) -> Dict[str, Any]:
     diff = (moon_lon - sun_lon) % 360.0
     tithi = int(diff // 12.0) + 1
 
+    planet_ids = {
+        "Sun": swe.SUN,
+        "Moon": swe.MOON,
+        "Mars": swe.MARS,
+        "Merc": swe.MERCURY,
+        "Jup": swe.JUPITER,
+        "Ven": swe.VENUS,
+        "Sat": swe.SATURN,
+    }
+    planet_rasi = {}
+    planet_status = {}
+    for name, pid in planet_ids.items():
+        pos, _ = swe.calc_ut(jd, pid, flags)
+        lon = pos[0] % 360.0
+        idx = int(lon // 30.0)
+        planet_rasi[name] = RASI_ORDER[idx]
+        speed_lon = float(pos[3]) if len(pos) > 3 else 0.0
+        planet_status[name] = {"is_retrograde": speed_lon < 0.0}
+
     return {
         "transit_nakshatra": transit_nak,
         "moon_rasi": moon_rasi,
         "tithi": tithi,
+        "planet_rasi": planet_rasi,
+        "planet_status": planet_status,
     }
