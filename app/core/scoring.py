@@ -1,87 +1,251 @@
 # app/core/scoring.py
+from __future__ import annotations
+
+from dataclasses import dataclass
 from datetime import date
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, Tuple
 
-from app.core.daily_features import get_daily_features_stub
+from app.core.daily_features import get_daily_features_swe
 from app.core.astrology_rules import (
-    clamp, house_from_lagna_and_moon,
-    tara_bala_label_and_score, special_flags, apply_special_day_overrides
+    clamp,
+    house_from_lagna_and_moon,
+    tara_bala_label_and_score,
 )
-
 from app.core.rule_loader import load_yaml_rule
 
 
-def classify_signal(score: float) -> str:
-    if score >= 70:
+# -----------------------------
+# Defaults (used if rules.yaml missing keys)
+# -----------------------------
+
+DEFAULT_RULES: Dict[str, Any] = {
+    # Step 1: Base score by MD/AD relationship label
+    "dasha_relative_matrix": {
+        "1/1": 75,
+        "2/12": 40,
+        "3/11": 85,
+        "4/10": 80,
+        "5/9": 95,
+        "6/8": 35,
+        "7/7": 70,
+    },
+    # Step 2: Tara Bala modifiers (dimension-wise multipliers)
+    # Keys are 7-labels from your code: Janma/Sampat/Vipat/Kshema/Pratyari/Sadhana/Naidhana
+    "tara_bala_modifiers": {
+        "Janma":    {"emotion": 0.9, "wealth": 1.0, "career": 1.0, "social": 1.0, "vitality": 0.8},
+        "Sampat":   {"emotion": 1.1, "wealth": 1.3, "career": 1.2, "social": 1.1, "vitality": 1.0},
+        "Vipat":    {"emotion": 0.8, "wealth": 0.9, "career": 0.7, "social": 0.8, "vitality": 0.9},
+        "Kshema":   {"emotion": 1.2, "wealth": 1.1, "career": 1.1, "social": 1.0, "vitality": 1.2},
+        "Pratyari": {"emotion": 0.7, "wealth": 1.0, "career": 0.8, "social": 0.6, "vitality": 0.9},
+        "Sadhana":  {"emotion": 1.1, "wealth": 1.2, "career": 1.3, "social": 1.1, "vitality": 1.0},
+        "Naidhana": {"emotion": 0.5, "wealth": 0.8, "career": 0.9, "social": 0.7, "vitality": 0.5},
+    },
+    # Step 3: Gochara house bonus (dimension-wise additive)
+    # We only have Moon house right now; later key_transits can add other planets.
+    "gochara_rules": {
+        "house_bonus": {3: 0.10, 6: 0.10, 10: 0.15, 11: 0.20},  # Upachaya default
+        # BAV placeholder thresholds (not used until you parse BAV + compute transit sign)
+        "bav_thresholds": {
+            "low":  {"range": [0, 2], "mod": -0.20},
+            "mid":  {"range": [3, 4], "mod": 0.00},
+            "high": {"range": [5, 8], "mod": 0.20},
+        },
+    },
+    # Which house matters most per dimension (placeholder – can be moved to YAML later)
+    "dimension_house_focus": {
+        "emotion": [4],
+        "wealth": [2, 11],
+        "career": [10],
+        "social": [3, 7],
+        "vitality": [1, 6],
+    },
+    # Signal thresholds for total_index
+    "signal_thresholds": {"green": 70, "yellow": 40},
+    "clamp": {"min": 5, "max": 99},
+}
+
+
+DIMENSIONS = ["emotion", "wealth", "career", "social", "vitality"]
+
+
+def _load_rules() -> Dict[str, Any]:
+    """
+    Load rules.yaml if present. Fall back to DEFAULT_RULES.
+    """
+    try:
+        cfg = load_yaml_rule("rules.yaml")
+        # shallow merge (good enough for now)
+        merged = dict(DEFAULT_RULES)
+        for k, v in (cfg or {}).items():
+            merged[k] = v
+        return merged
+    except Exception:
+        return DEFAULT_RULES
+
+
+# -----------------------------
+# Step 1: Base Score (MD/AD relationship)
+# -----------------------------
+
+def relationship_from_houses(maha_house: int, antar_house: int) -> str:
+    """
+    Convert MD/AD house positions into the 7 canonical relationship labels:
+    1/1, 2/12, 3/11, 4/10, 5/9, 6/8, 7/7
+    """
+    # Houses are 1..12
+    diff = (antar_house - maha_house) % 12  # 0..11
+
+    # Map symmetric offsets to 7 labels
+    mapping = {
+        0: "1/1",
+        1: "2/12",
+        2: "3/11",
+        3: "4/10",
+        4: "5/9",
+        5: "6/8",
+        6: "7/7",
+        7: "6/8",
+        8: "5/9",
+        9: "4/10",
+        10: "3/11",
+        11: "2/12",
+    }
+    return mapping[diff]
+
+
+def get_dasha_relationship(maha: str, antar: str, parsed_profile: Dict[str, Any]) -> str:
+    """
+    v1.1: Prefer real MD/AD house positions when available.
+    Fallback only if parsing is incomplete.
+    """
+    maha_house = parsed_profile.get("dasha_maha_house")
+    antar_house = parsed_profile.get("dasha_antar_house")
+
+    if isinstance(maha_house, int) and isinstance(antar_house, int):
+        return relationship_from_houses(maha_house, antar_house)
+
+    # Fallback (should be rare once parser is stable)
+    if maha == antar:
+        return "1/1"
+    return "7/7"
+
+
+
+def compute_base_score(parsed_profile: Dict[str, Any], rules: Dict[str, Any]) -> Dict[str, Any]:
+    maha = parsed_profile.get("dasha_maha", "Unknown")
+    antar = parsed_profile.get("dasha_antar", "Unknown")
+
+    rel = get_dasha_relationship(maha, antar, parsed_profile)
+    base_map = rules.get("dasha_relative_matrix", DEFAULT_RULES["dasha_relative_matrix"])
+    base = int(base_map.get(rel, 70))  # default to neutral-ish
+
+    return {
+        "maha": maha,
+        "antar": antar,
+        "dasha_relationship": rel,
+        "base_score": base,
+        "maha_house": parsed_profile.get("dasha_maha_house"),
+        "antar_house": parsed_profile.get("dasha_antar_house"),
+    }
+
+
+# -----------------------------
+# Step 2: Tara Bala modifiers (dimension-wise)
+# -----------------------------
+
+def apply_tara_bala(parsed_profile: Dict[str, Any], feat: Dict[str, Any], rules: Dict[str, Any]) -> Dict[str, Any]:
+    natal_nak = parsed_profile["natal_nakshatra_name"]
+    transit_nak = feat["transit_nakshatra"]
+
+    tara_label, _old_tara_score = tara_bala_label_and_score(natal_nak, transit_nak)
+    tara_mods_all = rules.get("tara_bala_modifiers", DEFAULT_RULES["tara_bala_modifiers"])
+    mods = tara_mods_all.get(tara_label, {d: 1.0 for d in DIMENSIONS})
+
+    return {
+        "natal_nak": natal_nak,
+        "transit_nak": transit_nak,
+        "tara_label": tara_label,
+        "tara_modifiers": {d: float(mods.get(d, 1.0)) for d in DIMENSIONS},
+    }
+
+
+# -----------------------------
+# Step 3: Gochara & BAV modifiers (placeholder with Moon house only)
+# -----------------------------
+
+def compute_house_and_modifiers(parsed_profile: Dict[str, Any], feat: Dict[str, Any], rules: Dict[str, Any]) -> Dict[str, Any]:
+    lagna_rasi = parsed_profile.get("lagna_rasi", None)
+    moon_rasi = feat["moon_rasi"]
+
+    if lagna_rasi is None:
+        moon_house = None
+    else:
+        moon_house = house_from_lagna_and_moon(lagna_rasi, moon_rasi)
+
+    gochara = rules.get("gochara_rules", DEFAULT_RULES["gochara_rules"])
+    house_bonus_table = gochara.get("house_bonus", DEFAULT_RULES["gochara_rules"]["house_bonus"])
+
+    # Generic bonus (same for all dimensions as a baseline)
+    generic_house_bonus = float(house_bonus_table.get(moon_house, 0.0)) if moon_house else 0.0
+
+    # Dimension-specific focus (optional extra weight if Moon lands in "important" house for that dimension)
+    focus = rules.get("dimension_house_focus", DEFAULT_RULES["dimension_house_focus"])
+    dim_house_bonus: Dict[str, float] = {}
+    for dim in DIMENSIONS:
+        focus_houses = set(focus.get(dim, []))
+        dim_house_bonus[dim] = generic_house_bonus if (moon_house in focus_houses) else 0.0
+
+    # BAV not implemented yet (until you parse BAV + compute planet sign)
+    bav_bonus = {d: 0.0 for d in DIMENSIONS}
+
+    return {
+        "lagna_rasi": lagna_rasi,
+        "moon_rasi": moon_rasi,
+        "moon_house": moon_house,
+        "house_modifiers": dim_house_bonus,  # additive inside (1 + house + bav)
+        "bav_modifiers": bav_bonus,
+    }
+
+
+# -----------------------------
+# Step 4: Synthesis & Clamping
+# -----------------------------
+
+def synthesize_scores(base_score: int,
+                      tara_mods: Dict[str, float],
+                      house_mods: Dict[str, float],
+                      bav_mods: Dict[str, float],
+                      rules: Dict[str, Any]) -> Dict[str, Any]:
+    clamp_cfg = rules.get("clamp", DEFAULT_RULES["clamp"])
+    lo = float(clamp_cfg.get("min", 5))
+    hi = float(clamp_cfg.get("max", 99))
+
+    dim_scores: Dict[str, int] = {}
+    for dim in DIMENSIONS:
+        m_tara = float(tara_mods.get(dim, 1.0))
+        m_house = float(house_mods.get(dim, 0.0))
+        m_bav = float(bav_mods.get(dim, 0.0))
+        raw = base_score * m_tara * (1.0 + m_house + m_bav)
+        dim_scores[dim] = int(round(clamp(raw, lo, hi)))
+
+    mx = max(dim_scores.values())
+    mean = sum(dim_scores.values()) / len(dim_scores)
+    total = int(round(clamp(mx * 0.3 + mean * 0.7, lo, hi)))
+
+    return {"dimensions": dim_scores, "total_index": total}
+
+
+def classify_signal(total_index: float, rules: Dict[str, Any]) -> str:
+    th = rules.get("signal_thresholds", DEFAULT_RULES["signal_thresholds"])
+    if total_index >= float(th.get("green", 70)):
         return "green"
-    if score >= 40:
+    if total_index >= float(th.get("yellow", 40)):
         return "yellow"
     return "red"
 
-def get_tithi_score(tithi: int) -> int:
-    # v1.1: 先保留简单版（后面你会换成 YAML 查表）
-    # 这里先给一点点波动：2/3/5/6/10/11/13/16/20/21/25/26/28/29 视为“平稳” +5
-    stable = {2,3,5,6,10,11,13,16,20,21,25,26,28,29}
-    if tithi in stable:
-        return 5
-    if tithi in (4,9,14):
-        return -10
-    return 0
 
-def get_dasha_factor(maha: str, antar: str) -> float:
-    # v1.1: 查表法，先用你之前建议的轻量版本
-    maha_map = {
-        "Sat": 0.90, "Jup": 1.05, "Ven": 1.05, "Merc": 1.00, "Sun": 0.98,
-        "Moon": 0.98, "Mars": 0.95, "Rah": 0.95, "Ket": 0.92
-    }
-    base = maha_map.get(maha, 1.0)
-
-    # antar轻微微调（可先都 1.0）
-    antar_map = {
-        "Sat": 0.99, "Jup": 1.01, "Ven": 1.01, "Merc": 1.00, "Sun": 1.00,
-        "Moon": 0.99, "Mars": 0.99, "Rah": 0.99, "Ket": 0.99
-    }
-    return base * antar_map.get(antar, 1.0)
-
-def get_container_factor() -> float:
-    # v1.1: 先不启用 Ashtakavarga，固定 1.0
-    return 1.0
-
-def get_house_factor(moon_house: int, enable_av: bool = False) -> float:
-    """
-    v1.1: house factor driven by YAML config (deterministic).
-    v1.2+: if enable_av True, we can override high/low by Ashtakavarga later.
-    """
-    if moon_house is None:
-        return 1.0
-
-    # v1.1 config
-    cfg = load_yaml_rule("house.yaml").get("default", {})
-
-    high_houses = set(cfg.get("high_houses", []))
-    low_houses = set(cfg.get("low_houses", []))
-
-    high_factor = float(cfg.get("high_factor", 1.1))
-    low_factor = float(cfg.get("low_factor", 0.9))
-    neutral_factor = float(cfg.get("neutral_factor", 1.0))
-
-    # v1.2+: if enable_av is True, we will compute high/low houses from AV
-    # For now, keep deterministic YAML rules (no AV).
-    if moon_house in high_houses:
-        return high_factor
-    if moon_house in low_houses:
-        return low_factor
-    return neutral_factor
-
-def action_templates(signal: str, flags: List[str]) -> Dict[str, Any]:
-    # v1.1: 先按 signal + flags 输出 deterministic 模板
-    if "rikta_tithi" in flags:
-        return {
-            "action_tags": ["maintenance", "avoid_new_starts"],
-            "do": ["Handle cleanup tasks", "Review and consolidate"],
-            "avoid": ["Start something new", "Make irreversible commitments"],
-        }
-
+def action_templates(signal: str) -> Dict[str, Any]:
+    # keep deterministic templates
     if signal == "green":
         return {"action_tags": ["execution", "decision_window"],
                 "do": ["Push key tasks", "Make decisions with confidence"],
@@ -94,72 +258,96 @@ def action_templates(signal: str, flags: List[str]) -> Dict[str, Any]:
             "do": ["Rest and review", "Do low-risk work"],
             "avoid": ["Major decisions", "High-pressure conflicts"]}
 
+
+# -----------------------------
+# Public API (used by calendar.py)
+# -----------------------------
+
 def score_day(parsed_profile: Dict[str, Any], d: date) -> Dict[str, Any]:
-    natal_nak = parsed_profile["natal_nakshatra_name"]
-    maha = parsed_profile.get("dasha_maha", "Unknown")
-    antar = parsed_profile.get("dasha_antar", "Unknown")
-    lagna_rasi = parsed_profile.get("lagna_rasi", None)
+    """
+    New v1.1 standardized engine output (still keeps legacy keys for UI).
+    """
+    rules = _load_rules()
 
-    # daily features (stub for now)
-    feat = get_daily_features_stub(d, natal_nak)
-    transit_nak = feat["transit_nakshatra"]
-    moon_rasi = feat["moon_rasi"]
-    tithi = int(feat["tithi"])
+    # Dynamic daily features (still stub; Swiss Ephemeris later)
+    feat = get_daily_features_swe(d, parsed_profile["natal_nakshatra_name"])
 
-    # v1.1 scores
-    tara_label, base_score = tara_bala_label_and_score(natal_nak, transit_nak)
-    env_score = get_tithi_score(tithi)
+    # Step 1
+    base_pack = compute_base_score(parsed_profile, rules)
 
-    container_factor = get_container_factor()
-    dasha_factor = get_dasha_factor(maha, antar)
+    # Step 2
+    tara_pack = apply_tara_bala(parsed_profile, feat, rules)
 
-    # moon house factor (needs lagna)
-    if lagna_rasi is None:
-        moon_house = None
-        house_factor = 1.0
-    else:
-        moon_house = house_from_lagna_and_moon(lagna_rasi, moon_rasi)
-        house_factor = get_house_factor(moon_house, enable_av=False)
+    # Step 3
+    gochara_pack = compute_house_and_modifiers(parsed_profile, feat, rules)
 
-    pre = (50 + base_score + env_score)
-    pre *= container_factor
-    pre *= dasha_factor
-    pre *= house_factor
+    # Step 4
+    scores_pack = synthesize_scores(
+        base_score=base_pack["base_score"],
+        tara_mods=tara_pack["tara_modifiers"],
+        house_mods=gochara_pack["house_modifiers"],
+        bav_mods=gochara_pack["bav_modifiers"],
+        rules=rules,
+    )
 
-    flags = special_flags(natal_nak, transit_nak, tithi)
-    signal = classify_signal(pre)
-    signal, pre2 = apply_special_day_overrides(signal, pre, flags, tara_label)
+    total_index = scores_pack["total_index"]
+    signal = classify_signal(total_index, rules)
+    actions = action_templates(signal)
 
-    final = clamp(pre2, 0, 100)
-
-    actions = action_templates(signal, flags)
-
+    # Keep UI-compatible keys + add standardized payload
     return {
         "date": d.isoformat(),
-        "day_score": int(round(final)),
+
+        # legacy UI fields (so you don't break templates immediately)
+        "day_score": int(total_index),
         "signal": signal,
-        "special_flags": flags,
+        "special_flags": [],
+
+        # your new standardized payload
+        "user_profile": {
+            "lagna": gochara_pack["lagna_rasi"],
+            "dasha_period": f"{base_pack['maha']}-{base_pack['antar']}",
+            "dasha_relationship": base_pack["dasha_relationship"],
+        },
+        "scores": {
+            "total_index": int(total_index),
+            "dimensions": scores_pack["dimensions"],
+        },
+        "astrological_triggers": {
+            "tara_bala": {
+                "name": tara_pack["tara_label"],
+                "nature": tara_pack["tara_label"],  # placeholder; can map to CN/EN descriptions in YAML
+                "impact": "Dimension-wise modifiers applied",  # placeholder
+            },
+            "key_transits": [
+                {
+                    "planet": "Moon",
+                    "house": gochara_pack["moon_house"],
+                    "status": "House bonus applied" if gochara_pack["moon_house"] else "Lagna missing",
+                    "note": "Moon transit from Swiss Ephemeris (sidereal)",
+                }
+            ],
+        },
+
+        # Keep drivers/components for your current debug UI
         "drivers": {
-            "tara_bala": tara_label,
-            "tithi": tithi,
-            "dasha": f"{maha}/{antar}",
-            "moon_rasi": moon_rasi,
-            "moon_house": moon_house,
+            "tara_bala": tara_pack["tara_label"],
+            "dasha": f"{base_pack['maha']}/{base_pack['antar']}",
+            "moon_rasi": gochara_pack["moon_rasi"],
+            "moon_house": gochara_pack["moon_house"],
         },
         "components": {
-            "natal_nakshatra": natal_nak,
-            "transit_nakshatra": transit_nak,
-            "tara_label": tara_label,
-            "base_score": base_score,
-            "tithi": tithi,
-            "env_score": env_score,
-            "lagna_rasi": lagna_rasi,
-            "moon_rasi": moon_rasi,
-            "moon_house": moon_house,
-            "house_factor": house_factor,
-            "container_factor": container_factor,
-            "dasha_factor": dasha_factor,
-            "pre_clamp_score": float(pre2),
+            "natal_nakshatra": tara_pack["natal_nak"],
+            "transit_nakshatra": tara_pack["transit_nak"],
+            "tara_label": tara_pack["tara_label"],
+            "base_score": base_pack["base_score"],
+            "lagna_rasi": gochara_pack["lagna_rasi"],
+            "moon_rasi": gochara_pack["moon_rasi"],
+            "moon_house": gochara_pack["moon_house"],
+            "tara_modifiers": tara_pack["tara_modifiers"],
+            "house_modifiers": gochara_pack["house_modifiers"],
+            "bav_modifiers": gochara_pack["bav_modifiers"],
         },
-        **actions
+
+        **actions,
     }

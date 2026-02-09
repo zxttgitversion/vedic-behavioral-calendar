@@ -19,3 +19,43 @@ def get_daily_features_stub(d: date, natal_nak: str) -> Dict[str, Any]:
         "moon_rasi": moon_rasi,
         "tithi": tithi,
     }
+
+def get_daily_features_swe(d: date, natal_nak: str) -> Dict[str, Any]:
+    """
+    Swiss Ephemeris-backed daily features for v1.3.
+    Deterministic: use 12:00 UTC for the given date.
+    Uses MOSEPH so it doesn't require ephemeris data files.
+    """
+    import swisseph as swe
+
+    # 12:00 UTC for determinism (no timezone/location yet)
+    jd = swe.julday(d.year, d.month, d.day, 12.0)
+
+    # sidereal zodiac (Lahiri) so rasi/nakshatra mapping is meaningful
+    swe.set_sid_mode(swe.SIDM_LAHIRI)
+
+    flags = swe.FLG_SWIEPH | swe.FLG_SIDEREAL | swe.FLG_MOSEPH
+
+    moon_pos, _ = swe.calc_ut(jd, swe.MOON, flags)
+    sun_pos, _ = swe.calc_ut(jd, swe.SUN, flags)
+
+    moon_lon = moon_pos[0] % 360.0
+    sun_lon = sun_pos[0] % 360.0
+
+    # rasi: 12 signs, 30° each
+    rasi_idx = int(moon_lon // 30.0)  # 0..11
+    moon_rasi = RASI_ORDER[rasi_idx]
+
+    # nakshatra: 27 parts, 13°20' = 13.333333...
+    nak_idx = int(moon_lon // (360.0 / 27.0))  # 0..26
+    transit_nak = NAK_ORDER[nak_idx]
+
+    # tithi: based on (moon - sun) / 12° + 1, wrap 1..30
+    diff = (moon_lon - sun_lon) % 360.0
+    tithi = int(diff // 12.0) + 1
+
+    return {
+        "transit_nakshatra": transit_nak,
+        "moon_rasi": moon_rasi,
+        "tithi": tithi,
+    }

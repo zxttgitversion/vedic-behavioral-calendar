@@ -70,8 +70,17 @@ async def upload_file(
                 "birth_utc_offset_minutes": parsed.birth_utc_offset_minutes,
                 "dasha_maha": parsed.dasha_maha,
                 "dasha_antar": parsed.dasha_antar,
-                "lagna_rasi": parsed.lagna_rasi,  # ✅ ADD THIS
-            },
+                "lagna_rasi": parsed.lagna_rasi,
+
+                # ✅ NEW: for v1.1 base engine explainability
+                "dasha_maha_house": parsed.dasha_maha_house,
+                "dasha_antar_house": parsed.dasha_antar_house,
+
+                # (optional but recommended)
+                "planet_rasi": parsed.planet_rasi,
+                "planet_houses": parsed.planet_houses,
+                },
+
 
         },
     )

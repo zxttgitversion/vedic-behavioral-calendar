@@ -1,0 +1,17 @@
+# app/rules/rules.yaml
+clamp:
+  min: 5
+  max: 99
+
+signal_thresholds:
+  green: 70
+  yellow: 40
+
+dasha_relative_matrix:
+  "1/1": 75
+  "2/12": 40
+  "3/11": 85
+  "4/10": 80
+  "5/9": 95
+  "6/8": 35
+  "7/7": 70
