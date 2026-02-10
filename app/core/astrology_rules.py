@@ -150,6 +150,36 @@ I18N_LABELS: Dict[str, Any] = {
         "exalted": "旺 (能量强劲)",
         "debilitated": "落 (能量虚弱)",
     },
+    "VEDHA_OBSTRUCTION_TEMPLATES": {
+        "Sun": {
+            "strong": "[好运受阻]：太阳光芒被掩盖，原本提升名望与地位的机会因小人或制度干扰而延迟。",
+            "weak": "[名望受阻]：太阳能量微弱，建议暂缓重大曝光和权力争夺。",
+        },
+        "Moon": {
+            "strong": "[心态受阻]：月亮心智被拨乱，原本稳定的情绪和直觉变得模糊，容易产生不必要的焦虑。",
+            "weak": "[情绪微弱]：月亮蒙尘，心态波动较大，宜加强冥想与自我觉察。",
+        },
+        "Mars": {
+            "strong": "[执行受阻]：火星刀锋变钝，原本果断的行动力遭遇软绵绵的阻力，切忌因心急而强行发力。",
+            "weak": "[斗志消退]：火星能量衰弱，竞争力下降，宜避免冲突与高压环境。",
+        },
+        "Merc": {
+            "strong": "[沟通受阻]：水星信号丢包，原本清晰的逻辑和文书往来出现偏差，看似达成的协议可能存在隐形漏洞。",
+            "weak": "[表达不畅]：水星被遮挡，信息传递易失真，重要沟通需多次确认。",
+        },
+        "Jup": {
+            "strong": "[好运受阻]：木星贵人失联，最关键的'神来之笔'被遮挡，外部机会看似很多，但实质性的助力难以落地。",
+            "weak": "[贵人隐退]：木星能量微弱，人脉资源难以动员，需要多花精力去维系关系。",
+        },
+        "Ven": {
+            "strong": "[情感/财运受阻]：金星蜜糖掺砂，原本愉悦的社交或进账伴随着小插曲，容易在关键时刻发生审美疲劳或预算超标。",
+            "weak": "[吸引力下降]：金星失辉，社交运和财运都不理想，宜降低期待值。",
+        },
+        "Sat": {
+            "strong": "[稳定受阻]：土星防线松动，原本以为万无一失的长期计划因外部环境的突然变动而需要临时打补丁。",
+            "weak": "[基础shake]：土星被压制，长期计划需要重新评估，保守策略反而更安全。",
+        },
+    },
 }
 
 
@@ -200,11 +230,25 @@ def nak_bilingual_label(name_or_abbr: str) -> str:
     x = (name_or_abbr or "").strip()
     if not x:
         return x
+    reverse = {v: k for k, v in FULL_TO_ABBR.items()}
     full = x
     if x in NAK_ORDER:
-        reverse = {v: k for k, v in FULL_TO_ABBR.items()}
         full = reverse.get(x, x)
     zh = I18N_LABELS["NAK_LABELS"].get(full) or I18N_LABELS["NAK_LABELS"].get(x)
+
+    # Fallback: normalize transliteration variants through nak index resolution.
+    if not zh:
+        try:
+            abbr = NAK_ORDER[nak_to_index(x)]
+            full = reverse.get(abbr, abbr)
+            zh = (
+                I18N_LABELS["NAK_LABELS"].get(full)
+                or I18N_LABELS["NAK_LABELS"].get(abbr)
+                or I18N_LABELS["NAK_LABELS"].get(x)
+            )
+        except ValueError:
+            pass
+
     if zh:
         return f"{zh} ({full})"
     return full
@@ -244,16 +288,23 @@ def nak_to_index(nak: str) -> int:
 
     full_to_abbr_norm = {
         "ashwini": "Aswi",
+        "aswini": "Aswi",
+        "asvini": "Aswi",
+        "ashvini": "Aswi",
         "bharani": "Bhar",
         "krittika": "Krit",
         "rohini": "Rohi",
         "mrigashirsha": "Mrig",
+        "mrigasirsha": "Mrig",
         "mrigashira": "Mrig",
+        "mrigasira": "Mrig",
         "ardra": "Ardr",
         "punarvasu": "Puna",
         "pushya": "Push",
         "ashlesha": "Asle",
+        "aslesha": "Asle",
         "magha": "Magh",
+        "poorvaphalguni": "PPha",
         "purvaphalguni": "PPha",
         "uttaraphalguni": "UPha",
         "hasta": "Hast",
@@ -263,19 +314,41 @@ def nak_to_index(nak: str) -> int:
         "vishakha": "Visa",
         "anuradha": "Anu",
         "jyeshtha": "Jye",
+        "jyestha": "Jye",
         "mula": "Mool",
+        "moola": "Mool",
+        "poorvaashadha": "PSha",
         "purvaashadha": "PSha",
+        "purvashadha": "PSha",
         "uttaraashadha": "USha",
+        "uttarashadha": "USha",
         "shravana": "Srav",
+        "sravana": "Srav",
         "dhanishta": "Dhan",
+        "shravishtha": "Dhan",
         "shatabhisha": "Sata",
+        "satabhisha": "Sata",
+        "shataraka": "Sata",
+        "poorvabhadrapada": "PBha",
         "purvabhadrapada": "PBha",
+        "purvabhadra": "PBha",
         "uttarabhadrapada": "UBha",
+        "uttarabhadra": "UBha",
         "revati": "Reva",
     }
 
-    if x_norm in full_to_abbr_norm:
-        return NAK_ORDER.index(full_to_abbr_norm[x_norm])
+    # Tolerant lookup for common transliteration shifts (JH and regional spellings).
+    candidates = {x_norm}
+    for key in list(candidates):
+        candidates.add(key.replace("oo", "u"))
+        candidates.add(key.replace("sh", "s"))
+        candidates.add(key.replace("w", "v"))
+        candidates.add(key.replace("v", "w"))
+
+    for key in candidates:
+        abbr = full_to_abbr_norm.get(key)
+        if abbr:
+            return NAK_ORDER.index(abbr)
 
     raise ValueError(f"Unknown nakshatra: {nak}")
 

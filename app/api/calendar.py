@@ -1,13 +1,19 @@
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
+import calendar as pycal
+try:
+    from zoneinfo import ZoneInfo
+except Exception:
+    ZoneInfo = None
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
+from pathlib import Path
 
 from app.storage.profile_store import load_profile, save_profile
 from app.core.scoring import score_day
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
+templates = Jinja2Templates(directory=str(Path(__file__).resolve().parents[1] / "templates"))
 
 
 def _inject_deltas(days: list[dict]) -> None:
@@ -34,21 +40,74 @@ def _inject_deltas(days: list[dict]) -> None:
 def calendar_page(request: Request, file_id: str):
     profile = load_profile(file_id)
     tz = profile.get("calendar_tz", "UTC")
+    # generate scores for the current month
+    today = date.today()
+    year = today.year
+    month = today.month
 
-    start = date.today()
+    _, days_in_month = pycal.monthrange(year, month)
     days = []
-    for i in range(30):
-        d = start + timedelta(days=i)
+    for daynum in range(1, days_in_month + 1):
+        d = date(year, month, daynum)
         out = score_day(profile["parsed"], d)
         days.append(out)
+
     _inject_deltas(days)
 
+    # keep a flat list for compatibility with /day route
     profile["calendar_30d"] = days
     save_profile(file_id, profile)
 
+    # compute today in user's timezone
+    today_str = date.today().isoformat()
+    try:
+        if ZoneInfo is not None:
+            tzinfo = ZoneInfo(tz)
+            today_dt = datetime.now(tzinfo)
+            today_str = today_dt.date().isoformat()
+    except Exception:
+        # fallback to server local date
+        today_str = date.today().isoformat()
+
+    # build week grid (Monday=0 .. Sunday=6)
+    first_weekday, _ = pycal.monthrange(year, month)
+    weeks = []
+    week = [None] * 7
+    day_index = 1
+
+    # fill first week
+    for pos in range(first_weekday, 7):
+        week[pos] = days[day_index - 1]
+        day_index += 1
+        if day_index > days_in_month:
+            break
+    weeks.append(week)
+
+    # fill remaining weeks
+    while day_index <= days_in_month:
+        week = []
+        for pos in range(7):
+            if day_index <= days_in_month:
+                week.append(days[day_index - 1])
+                day_index += 1
+            else:
+                week.append(None)
+        weeks.append(week)
+
+    weekday_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
     return templates.TemplateResponse(
         "calendar.html",
-        {"request": request, "file_id": file_id, "tz": tz, "days": days},
+        {
+            "request": request,
+            "file_id": file_id,
+            "tz": tz,
+            "weeks": weeks,
+            "year": year,
+            "month": month,
+            "weekday_names": weekday_names,
+            "today_str": today_str,
+        },
     )
 
 

@@ -3,27 +3,134 @@
 <head>
   <meta charset="UTF-8">
   <title>Profile</title>
+  <style>
+    :root {
+      --bg: #f4f7fc;
+      --card: #ffffff;
+      --text: #162335;
+      --muted: #5f6f85;
+      --line: #dbe5f2;
+      --green: #1f8f5f;
+      --yellow: #b98600;
+      --red: #bf3434;
+      --accent: #1f4d9f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "Noto Sans SC", sans-serif;
+      color: var(--text);
+      background: linear-gradient(180deg, #eaf1fc 0%, var(--bg) 36%, #f8fbff 100%);
+      padding: 24px;
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    h2 { font-size: 28px; margin: 0 0 8px; }
+    .sub { margin: 0 0 24px; color: var(--muted); }
+    h3 { font-size: 16px; color: var(--text); margin: 20px 0 12px; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
+    }
+    .meta {
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px;
+      background: #fbfdff;
+      margin-bottom: 8px;
+    }
+    .meta .k { color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+    .meta .v { font-weight: 600; color: var(--text); }
+    ul { margin: 0; padding-left: 16px; }
+    li { margin: 8px 0; }
+    .btn-primary-full {
+      display: block;
+      width: 100%;
+      text-align: center;
+      background: var(--accent);
+      color: #fff;
+      padding: 16px 24px;
+      border: none;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      margin-bottom: 12px;
+    }
+    .btn-primary-full:hover {
+      background: #173a7a;
+      box-shadow: 0 4px 12px rgba(31, 77, 159, 0.2);
+    }
+    .btn-secondary-link {
+      display: block;
+      width: 100%;
+      text-align: center;
+      background: transparent !important;
+      color: var(--muted) !important;
+      padding: 10px 0;
+      border: none;
+      border-radius: 0;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 400;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: none !important;
+    }
+    .btn-secondary-link:hover {
+      color: var(--accent) !important;
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
-  <h2>Profile Parsed</h2>
+  <div class="wrap">
+    <h2>Birth Profile Ready</h2>
+    <p class="sub">Your astrological data has been parsed and is ready for calendar generation.</p>
 
-  <p><b>File ID:</b> {{ file_id }}</p>
+    <h3>出生档案 (Birth Data)</h3>
+    <div class="card">
+      <p style="margin-top: 0; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px;">从 JHora 报告解析，不可修改</p>
+      <div class="meta">
+        <div class="k">出生日期 (Birth Date)</div>
+        <div class="v">{{ profile["parsed"].get("birth_date", "—") }}</div>
+      </div>
+      <div class="meta">
+        <div class="k">出生时刻 (Birth Time)</div>
+        <div class="v">{{ profile["parsed"].get("birth_time", "—") }}</div>
+      </div>
+      <div class="meta">
+        <div class="k">出生时区 (Birth Timezone)</div>
+        <div class="v">{{ profile["parsed"].get("birth_utc_offset_display", "UTC±0:00") }}</div>
+      </div>
+    </div>
 
-  <h3>Calendar Timezone</h3>
-  <p>{{ profile["calendar_tz"] }}</p>
+    <h3>日历配置 (Calendar Settings)</h3>
+    <div class="card">
+      <div class="meta">
+        <div class="k">当前生活时区 (Living Timezone)</div>
+        <div class="v">{{ profile["calendar_tz"] }}</div>
+      </div>
+      {% if profile["calendar_tz"] != profile["parsed"].get("birth_utc_offset_display", "UTC±0:00") %}
+      <div style="background: #fff7e8; border: 1px solid #f1d299; border-radius: 8px; padding: 10px; margin-top: 10px; font-size: 13px; color: #9d5c00;">
+        <b>ℹ️ 提示：</b> 已根据当前生活时区调整日历计算和建议时间。
+      </div>
+      {% endif %}
+    </div>
 
-  <h3>Key Fields</h3>
-  <ul>
-    <li><b>Natal Nakshatra:</b> {{ profile["parsed"]["natal_nakshatra_name"] }}</li>
-    <li><b>Birth UTC Offset (minutes):</b> {{ profile["parsed"]["birth_utc_offset_minutes"] }}</li>
-    <li><b>Current Dasha:</b> {{ profile["parsed"]["dasha_maha"] }} / {{ profile["parsed"]["dasha_antar"] }}</li>
-  </ul>
-
-  <hr>
-
-  <p>Next: generate 30-day calendar (we will build this next).</p>
-  <!-- 先占位，下一步我们做真正按钮 -->
-  <p><a href="/calendar/{{ file_id }}">Generate / View 30-day calendar</a></p>
-
+    <h3>开始查看日历 (View Your Calendar)</h3>
+    <div class="card">
+      <p style="margin-top: 0; color: var(--muted);">查看你的个人化行为决策日历，包括每日能量指数和指引。</p>
+      <a href="/calendar/{{ file_id }}" class="btn-primary-full">View Monthly Calendar</a>
+      <a href="/" class="btn-secondary-link">← Back to Upload</a>
+    </div>
+  </div>
 </body>
 </html>

@@ -28,6 +28,8 @@ class ParsedProfile:
     birth_utc_offset_minutes: int
     dasha_maha: str
     dasha_antar: str
+    birth_date: Optional[str] = None  # "YYYY-MM-DD" format
+    birth_time: Optional[str] = None  # "HH:mm:ss" format
     lagna_rasi: Optional[str] = None
     natal_moon_rasi: Optional[str] = None
 
@@ -43,6 +45,49 @@ class ParsedProfile:
 
     # NEW: BAV per planet and rasi, e.g. {"Jup": {"Ar": 5, ...}, ...}
     bav_rasi: Optional[Dict[str, Dict[str, int]]] = None
+
+
+def _parse_birth_date_time(text: str) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Parse birth date and time from report.
+    Example:
+        Date:          May 7, 2001
+        Time:          19:01:46
+    Return: (date_str: "2001-05-07", time_str: "19:01:46") or (None, None)
+    """
+    from datetime import datetime as dt
+    
+    # Month names mapping
+    month_names = {
+        'January': '01', 'February': '02', 'March': '03', 'April': '04',
+        'May': '05', 'June': '06', 'July': '07', 'August': '08',
+        'September': '09', 'October': '10', 'November': '11', 'December': '12',
+        'Jan': '01', 'Feb': '02', 'Mar': '03', 'Apr': '04', 'May': '05',
+        'Jun': '06', 'Jul': '07', 'Aug': '08', 'Sep': '09', 'Oct': '10',
+        'Nov': '11', 'Dec': '12'
+    }
+    
+    date_str = None
+    time_str = None
+    
+    # Parse Date
+    date_match = re.search(r"^Date:\s*(\w+)\s+(\d+),\s*(\d{4})", text, flags=re.MULTILINE)
+    if date_match:
+        month_name = date_match.group(1)
+        day = date_match.group(2).zfill(2)
+        year = date_match.group(3)
+        month = month_names.get(month_name, "01")
+        date_str = f"{year}-{month}-{day}"
+    
+    # Parse Time
+    time_match = re.search(r"^Time:\s*(\d{1,2}):(\d{2}):(\d{2})", text, flags=re.MULTILINE)
+    if time_match:
+        hour = time_match.group(1).zfill(2)
+        minute = time_match.group(2)
+        second = time_match.group(3)
+        time_str = f"{hour}:{minute}:{second}"
+    
+    return (date_str, time_str)
 
 
 def _parse_birth_utc_offset_minutes(text: str) -> int:
@@ -276,6 +321,7 @@ def get_current_dasha(timeline: List[Tuple[str, str, date]], today: date) -> Tup
 def parse_report_text(text: str, today: date) -> ParsedProfile:
     natal = _parse_natal_nakshatra_name(text)
     birth_offset = _parse_birth_utc_offset_minutes(text)
+    birth_date_str, birth_time_str = _parse_birth_date_time(text)
     lagna = _parse_lagna_rasi(text)
 
     vblock = _extract_vimsottari_block(text)
@@ -306,6 +352,8 @@ def parse_report_text(text: str, today: date) -> ParsedProfile:
     return ParsedProfile(
         natal_nakshatra_name=natal,
         birth_utc_offset_minutes=birth_offset,
+        birth_date=birth_date_str,
+        birth_time=birth_time_str,
         dasha_maha=maha,
         dasha_antar=antar,
         lagna_rasi=lagna,
