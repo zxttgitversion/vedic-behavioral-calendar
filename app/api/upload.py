@@ -15,6 +15,29 @@ router = APIRouter()
 UPLOAD_DIR = Path(__file__).resolve().parent.parent / "storage" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
+# Mapping of IANA timezone IDs to user-friendly names with UTC offset
+TIMEZONE_DISPLAY_MAP = {
+    "UTC": "UTC (UTC+0:00)",
+    "Europe/London": "London (UTC+0:00 / UTC+1:00)",
+    "Europe/Paris": "Paris (UTC+1:00 / UTC+2:00)",
+    "Asia/Shanghai": "Beijing (UTC+8:00)",
+    "Asia/Hong_Kong": "Hong Kong (UTC+8:00)",
+    "Asia/Tokyo": "Tokyo (UTC+9:00)",
+    "US/Eastern": "New York (UTC-5:00 / UTC-4:00)",
+    "US/Central": "Chicago (UTC-6:00 / UTC-5:00)",
+    "US/Mountain": "Denver (UTC-7:00 / UTC-6:00)",
+    "US/Pacific": "Los Angeles (UTC-8:00 / UTC-7:00)",
+}
+
+def format_utc_offset(minutes: int) -> str:
+    """Convert UTC offset in minutes to human-readable format (UTC±HH:mm)"""
+    if minutes == 0:
+        return "UTC±0:00"
+    sign = "+" if minutes > 0 else "-"
+    hours = abs(minutes) // 60
+    mins = abs(minutes) % 60
+    return f"UTC{sign}{hours:02d}:{mins:02d}"
+
 @router.post("/upload")
 async def upload_file(
     file: UploadFile = File(...),
@@ -66,8 +89,11 @@ async def upload_file(
         {
             "calendar_tz": calendar_tz,
             "parsed": {
+                "birth_date": parsed.birth_date,
+                "birth_time": parsed.birth_time,
                 "natal_nakshatra_name": parsed.natal_nakshatra_name,
                 "birth_utc_offset_minutes": parsed.birth_utc_offset_minutes,
+                "birth_utc_offset_display": format_utc_offset(parsed.birth_utc_offset_minutes),
                 "dasha_maha": parsed.dasha_maha,
                 "dasha_antar": parsed.dasha_antar,
                 "lagna_rasi": parsed.lagna_rasi,

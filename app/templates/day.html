@@ -157,13 +157,13 @@
       font-weight: 700;
     }
     .delta-soft {
+      display: inline-flex;
+      align-items: center;
+      gap: 1px;
       font-weight: 400;
       font-size: 11px;
       opacity: 0.6;
-      align-self: flex-start;
       line-height: 1;
-      margin-top: 2px;
-      vertical-align: super;
     }
     .delta-pos {
       color: #27ae60;
@@ -215,8 +215,11 @@
         <div class="v signal-{{ day['signal'] }}">{{ day["signal"]|capitalize }}</div>
       </div>
       <div class="kpi">
-        <div class="k">Total Index</div>
-        <div class="v">{{ day["scores"]["total_index"] }}</div>
+        <div class="k">综合能量指数 (Energy Index)</div>
+        <div class="v">
+          <span class="signal-{{ day['signal'] }}">{{ day["scores"]["total_index"] }}</span>
+          <span style="font-size:14px; color:var(--muted); font-weight:normal;">/100</span>
+        </div>
       </div>
       <div class="kpi">
         <div class="k">Dasha</div>
@@ -307,14 +310,21 @@
           {% set lbl = day["components"]["dimension_labels"].get(k, {}) %}
           {% set en = lbl.get("en", k) %}
           {% set zh = lbl.get("zh", k) %}
-          {% set delta = day["scores"].get("deltas", {}).get(k, 0) %}
+          {% set delta = day["scores"].get("deltas", {}).get(k, 0) | default(0, true) | int %}
           <div class="dim-row">
             <div class="dim-row-top">
               <div class="dim-name">{{ zh }} ({{ en }})</div>
               <div class="dim-bar-track"><div class="dim-bar-fill fill-inner" style="width: {{ v }}%;"></div></div>
               {% set delta_class = "delta-zero" %}
               {% if delta > 0 %}{% set delta_class = "delta-pos" %}{% elif delta < 0 %}{% set delta_class = "delta-neg" %}{% endif %}
-              <div class="dim-score"><span class="delta-soft {{ delta_class }}">{{ "%+d"|format(delta) }}</span><span class="main-score">{{ v }}</span></div>
+              {% set delta_arrow = "" %}
+              {% if delta > 0 %}{% set delta_arrow = "↑" %}{% elif delta < 0 %}{% set delta_arrow = "↓" %}{% endif %}
+              <div class="dim-score">
+                <span class="delta-soft {{ delta_class }}">
+                  {% if delta != 0 %}{{ delta_arrow }}{{ delta|abs }}{% endif %}
+                </span>
+                <span class="main-score">{{ v }}</span>
+              </div>
             </div>
             {% for x in day["astrological_triggers"]["key_transits"] %}
               {% if x["dimension"] == k %}
@@ -338,14 +348,21 @@
           {% set lbl = day["components"]["dimension_labels"].get(k, {}) %}
           {% set en = lbl.get("en", k) %}
           {% set zh = lbl.get("zh", k) %}
-          {% set delta = day["scores"].get("deltas", {}).get(k, 0) %}
+          {% set delta = day["scores"].get("deltas", {}).get(k, 0) | default(0, true) | int %}
           <div class="dim-row">
             <div class="dim-row-top">
               <div class="dim-name">{{ zh }} ({{ en }})</div>
               <div class="dim-bar-track"><div class="dim-bar-fill fill-outer" style="width: {{ v }}%;"></div></div>
               {% set delta_class = "delta-zero" %}
               {% if delta > 0 %}{% set delta_class = "delta-pos" %}{% elif delta < 0 %}{% set delta_class = "delta-neg" %}{% endif %}
-              <div class="dim-score"><span class="delta-soft {{ delta_class }}">{{ "%+d"|format(delta) }}</span><span class="main-score">{{ v }}</span></div>
+              {% set delta_arrow = "" %}
+              {% if delta > 0 %}{% set delta_arrow = "↑" %}{% elif delta < 0 %}{% set delta_arrow = "↓" %}{% endif %}
+              <div class="dim-score">
+                <span class="delta-soft {{ delta_class }}">
+                  {% if delta != 0 %}{{ delta_arrow }}{{ delta|abs }}{% endif %}
+                </span>
+                <span class="main-score">{{ v }}</span>
+              </div>
             </div>
             {% for x in day["astrological_triggers"]["key_transits"] %}
               {% if x["dimension"] == k %}

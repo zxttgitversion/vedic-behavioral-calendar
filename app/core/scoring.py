@@ -254,7 +254,11 @@ def _vedha_hit(target_planet: str,
         obs_n = _normalize_planet_name(obs)
         if obs_n is None:
             continue
+        # Filter out Moon (not obstructor)
         if obs_n == "Moon":
+            continue
+        # Filter out Rahu/Ketu (shadow planets, cannot cast vedha)
+        if obs_n in ["Rah", "Ket"]:
             continue
         if obs_n == _normalize_planet_name(target_planet):
             continue
@@ -403,7 +407,9 @@ def compute_gochara_v2(parsed_profile: Dict[str, Any], feat: Dict[str, Any], rul
             if vedha_hit and s_raw > 0:
                 s_raw = 0.0
                 if vedha_by:
-                    obstruction_records.append((p, vedha_by))
+                    # Track obstruction strength: strong if Chandra-detected, weak if only Lagna
+                    is_strong_obstruction = "chandra" in vedha_basis
+                    obstruction_records.append((p, vedha_by, is_strong_obstruction, vedha_basis))
 
             is_retro = bool((transit_motion.get(p) or {}).get("is_retrograde", False))
             m_status, status_pack = _status_multiplier(p, transit_rasi, is_retro, rules)
@@ -457,12 +463,29 @@ def compute_gochara_v2(parsed_profile: Dict[str, Any], feat: Dict[str, Any], rul
             key_transits.append(dominant)
 
     obstruction_msg = None
-    if obstruction_records:
-        p, obs = obstruction_records[0]
-        obstruction_msg = (
-            f"[好运受阻]：原本有利的 {planet_zh(p)}({p}) 能量被 {planet_zh(obs)}({obs}) 遮蔽。"
-            "建议：虽然外部机会多，但落地过程中会有意外干扰，宜静不宜动。"
-        )
+    strong_obstruction_found = False
+    
+    # Only show top-level warning (yellow frame) if Chandra-detected (strong) obstruction exists
+    for record in obstruction_records:
+        if len(record) == 4:
+            p, obs, is_strong, basis = record
+        else:
+            # Fallback for old 2-tuple format
+            p, obs = record
+            is_strong = False
+            basis = []
+        
+        if is_strong and not strong_obstruction_found:
+            # Show this as the main obstruction message (top yellow frame)
+            obstruction_msg = _get_obstruction_message(p, obs, True)
+            strong_obstruction_found = True
+            break
+    
+    # If no strong obstruction, check for weak ones (but don't show top-level warning)
+    if not strong_obstruction_found and obstruction_records:
+        # Weak obstruction exists but won't be shown as top-level alert
+        # It will still be visible in vedha_impact for transparency
+        pass
 
     return {
         "lagna_rasi": lagna_rasi,
@@ -478,6 +501,34 @@ def compute_gochara_v2(parsed_profile: Dict[str, Any], feat: Dict[str, Any], rul
         "chandra_gochara": chandra_gochara,
         "obstruction_message": obstruction_msg,
     }
+
+
+def _get_obstruction_message(target_planet: str, obstructor: str, is_strong: bool) -> str:
+    """
+    Generate differentiated obstruction message based on target planet and obstruction strength.
+    
+    Args:
+        target_planet: Normalized planet name (e.g., "Sun", "Moon", "Jup")
+        obstructor: Normalized obstructor planet name
+        is_strong: True if Chandra-detected (strong), False if only Lagna-detected (weak)
+        
+    Returns:
+        Localized obstruction message
+    """
+    templates = I18N_LABELS.get("VEDHA_OBSTRUCTION_TEMPLATES", {})
+    planet_templates = templates.get(target_planet, {})
+    
+    strength = "strong" if is_strong else "weak"
+    msg = planet_templates.get(strength)
+    
+    if msg:
+        return msg
+    
+    # Fallback generic message
+    if is_strong:
+        return f"[好运受阻]：{planet_zh(target_planet)} 被 {planet_zh(obstructor)} 遮蔽，需要谨慎推进计划。"
+    else:
+        return f"[轻度阻碍]：{planet_zh(target_planet)} 能量有所减弱，宜保持低调。"
 
 
 def synthesize_scores(base_score: int,
